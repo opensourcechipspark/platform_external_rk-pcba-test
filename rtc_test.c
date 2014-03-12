@@ -9,7 +9,11 @@
 #include <linux/rtc.h>
 
 #include <stdlib.h>
+#include "common.h"
 #include "rtc_test.h"
+#include "script.h"
+#include "test_case.h"
+#include "language.h"
 
 int  rtc_xopen(int flags)
 {
@@ -23,7 +27,7 @@ int  rtc_xopen(int flags)
 		rtc = open(minor_rtc, flags);
 		if(rtc >= 0)
 		{
-			printf("open %s\n",minor_rtc);
+		//	printf("open %s\n",minor_rtc);
 		}
 		else
 		{
@@ -34,7 +38,6 @@ int  rtc_xopen(int flags)
 	{
 		printf("open %s\n",major_rtc);
 	}
-
 
 	return rtc;
 }
@@ -57,7 +60,7 @@ int  rtc_read_tm(struct tm *ptm, int fd)
 	return ret;
 }
 
-static time_t read_rtc()
+static int  read_rtc(time_t *time_p)
 {
 	struct tm tm_time;
 	int fd;
@@ -77,20 +80,23 @@ static time_t read_rtc()
 	if(ret < 0)
 		return ret;
 	else
-		return  mktime(&tm_time);
+		*time_p = mktime(&tm_time);
+
+	return 0;
 }
 
 int get_system_time(char *dt)
 {    
 	int fd;
 	time_t t;
+	int ret;
 	
 	#if 1
 	time_t timep;
-	struct tm *p;
-	timep = read_rtc();
-	if(timep <= 0)
-		return timep;
+	struct tm *p; 
+	ret = read_rtc(&timep);
+	if(ret <  0)
+		return ret;
 	else
 		p = localtime(&timep);    
 	sprintf(dt,"%04d-%02d-%02d %02d:%02d:%02d",(1900+p->tm_year),(1+p->tm_mon),p->tm_mday,p->tm_hour,p->tm_min,p->tm_sec); 
@@ -143,18 +149,34 @@ int set_system_time(struct timeval *tv)
 
 void* rtc_test(void *argc)
 {
-	char dt[30]={"20120926.132600"};
-	struct rtc_msg *rtc_msg = (struct rtc_msg*)argc;
-	int ret;
+	struct testcase_info *tc_info = (struct testcase_info*)argc;
+	char dt[32]={"20120926.132600"};
+	int ret,y;
 	struct tm tm;
 	struct timeval tv;
-	char *s = rtc_msg->date;
-	int day = atoi(s);
-	int hour;
+	char *s;
+	int day,hour;
 	time_t t;
-	
-	
+	struct tm *p;
 	struct timespec ts;
+	
+	/*remind ddr test*/
+	if(tc_info->y <= 0)
+		tc_info->y  = get_cur_print_y();
+	
+	y = tc_info->y;	
+	ui_print_xy_rgba(0,y,255,255,0,255,"%s:[%s..] \n",PCBA_RTC,PCBA_TESTING);
+
+
+	s = malloc(32);
+	 if(script_fetch("rtc", "module_args", (int *)dt, 8) == 0)
+	 {
+	 	//printf("%s>>>args:%s\n",__func__,s);
+                strncpy(s, dt, 32);
+	}
+
+	//printf("%s>>>%s\n",__func__,s);
+	day = atoi(s);
 
 	while (*s && *s != '.')
 		s++;
@@ -179,27 +201,64 @@ void* rtc_test(void *argc)
 	ret = set_system_time(&tv);
 	if(ret < 0)
 	{
-		rtc_msg->result = -1;
+		//rtc_msg->result = -1;
+		ret = -1;
 	}
 	else
 	{
-		t = get_system_time(rtc_msg->date);
+	    sleep(1);
+//	    y=get_cur_print_y();
+		while(1)
+		{
+			t = get_system_time(dt);
+			if(t < 0)
+			{
+			//rtc_msg->result = -1;
+				ret = -1;
+				break;
+			}
+			p = localtime(&t);
+			//ui_print_xy_rgba(0,y,0,255,0,255,"%s:[%s] { %04d/%02d/%02d %02d:%02d:%02d }\n",PCBA_RTC,PCBA_SECCESS,(1900+p->tm_year),(1+p->tm_mon),p->tm_mday,p->tm_hour,p->tm_min,p->tm_sec);
+			ui_display_sync(0,y,0,255,0,255,"%s:[%s] { %04d/%02d/%02d %02d:%02d:%02d }\n",PCBA_RTC,PCBA_SECCESS,(1900+p->tm_year),(1+p->tm_mon),p->tm_mday,p->tm_hour,p->tm_min,p->tm_sec);
+			sleep(1);
+		}
+/*
+		t = get_system_time(dt);
 		if(t < 0)
-			rtc_msg->result = -1;
+		{
+			//rtc_msg->result = -1;
+			ret = -1;
+		}
 		else
 		{
 			if((t - tv.tv_sec > 10))
 			{
 				printf("test rtc failed:settime:%lu>>read time:%lu\n",
 					tv.tv_sec,t);
-				rtc_msg->result = -1;
+				//rtc_msg->result = -1;
+				ret = -1;
 			}
 			else
 			{
-				rtc_msg->result = 0;
+				//rtc_msg->result = 0;
+				ret = 0;
 			}
 		}
+*/
 	}
+	
+	if(ret == 0)
+	{
+		tc_info->result = 0;
+	//	ui_print_xy_rgba(0,get_cur_print_y(),0,0,255,100,"rtc: ok!   { %s }\n",dt);
+		ui_print_xy_rgba(0,y,0,255,0,255,"%s:[%s]\n",PCBA_RTC,PCBA_SECCESS);
+	}
+	else
+	{
+		tc_info->result = -1;
+		ui_print_xy_rgba(0,y,255,0,0,255,"%s:[%s]\n",PCBA_RTC,PCBA_FAILED);
+	}
+	
 	
 	return argc;
 }

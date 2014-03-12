@@ -2,6 +2,30 @@ ifneq ($(TARGET_SIMULATOR),true)
 ifeq ($(TARGET_ARCH),arm)
 
 LOCAL_PATH := $(call my-dir)
+
+NO_CODEC_TEST_BIN=false
+ifneq ($(NO_CODEC_TEST_BIN), true)
+include $(CLEAR_VARS)
+LOCAL_MODULE := codec_test
+LOCAL_FORCE_STATIC_EXECUTABLE := true
+#LOCAL_MODULE_PATH:=$(TARGET_ROOT_OUT_SBIN)
+LOCAL_C_INCLUDES += bionic external/stlport/stlport $(LOCAL_PATH)/Language
+
+LOCAL_SRC_FILES := \
+    alsa_pcm.c     \
+    alsa_mixer.c   \
+    codec_test.c   \
+    codec_main.c
+
+
+LOCAL_MODULE_TAGS := eng
+LOCAL_STATIC_LIBRARIES := libc libcutils liblog
+LOCAL_SHARED_LIBRARIES := 
+
+
+include $(BUILD_EXECUTABLE)
+endif
+
 include $(CLEAR_VARS)
 
 commands_recovery_local_path := $(LOCAL_PATH)
@@ -12,11 +36,11 @@ TW_INTERNAL_STORAGE_PATH := "/mnt/sdcard"
 TW_INTERNAL_STORAGE_MOUNT_POINT := "/mnt/sdcard"
 LOCAL_MODULE := pcba_core
 LOCAL_FORCE_STATIC_EXECUTABLE := true
-LOCAL_MODULE_PATH:=$(TARGET_ROOT_OUT_SBIN)
-LOCAL_C_INCLUDES += bionic external/stlport/stlport
+#LOCAL_MODULE_PATH:=$(TARGET_ROOT_OUT_SBIN)
+LOCAL_C_INCLUDES += bionic external/stlport/stlport $(LOCAL_PATH)/Language
 
 LOCAL_SRC_FILES := \
-    pre_test.cpp\
+    pre_test.c\
     ui.c \
     extra-functions.c \
     ddftw.c \
@@ -24,16 +48,27 @@ LOCAL_SRC_FILES := \
     default_recovery_ui.c \
     reboot.c			\
     data.cpp			\
+    script.c			\
+    script_parser.c		\
     screen_test.c		\
     rtc_test.c			\
     camera_test.c		\
+	et_cc_linux_arm.c	\
     key_test.c			\
+    alsa_mixer.c		\
     alsa_pcm.c			\
     codec_test.c		\
     wlan_test.c			\
+    bt_test.c			\
+	any_test.c          \
     sdcard_test.c		\
-    gsensor_test.c 
-
+    udisk_test.c        \
+    gsensor_test.c 		\
+    hdmi_test.c       \
+    sim_test.c \
+    battery_test.c\
+	ddr_test.c \
+	cpu_test.c
 
 RECOVERY_API_VERSION := 2
 LOCAL_CFLAGS += -DRECOVERY_API_VERSION=$(RECOVERY_API_VERSION)
@@ -137,17 +172,18 @@ endif
 
 LOCAL_MODULE_TAGS := eng
 LOCAL_STATIC_LIBRARIES :=
-LOCAL_SHARED_LIBRARIES :=
+LOCAL_SHARED_LIBRARIES := 
 
 ifeq ($(TARGET_RECOVERY_GUI),true)
   LOCAL_STATIC_LIBRARIES += libtwgui
 else
   LOCAL_SRC_FILES += gui_stub.c
 endif
+LOCAL_STATIC_LIBRARIES += libm
 LOCAL_STATIC_LIBRARIES += libminziptwrp libunz libmincrypt
-LOCAL_STATIC_LIBRARIES += libminuitwrp libpixelflinger_static libpng libjpegtwrp 
+LOCAL_STATIC_LIBRARIES += libminuitwrp libpixelflinger_static libpng libjpegtwrp libbluetooth
 LOCAL_STATIC_LIBRARIES += libz libc libstlport_static libcutils libstdc++
-LOCAL_STATIC_LIBRARIES += libmtdutils
+LOCAL_STATIC_LIBRARIES += libmtdutils liblog
 
 
 
@@ -172,6 +208,7 @@ include $(commands_recovery_local_path)/minuitwrp/Android.mk
 include $(commands_recovery_local_path)/gui/Android.mk
 include $(commands_recovery_local_path)/libjpegtwrp/Android.mk
 include $(commands_recovery_local_path)/minziptwrp/Android.mk
+include $(commands_recovery_local_path)/libbluetooth/Android.mk
 commands_recovery_local_path :=
 
 endif   # TARGET_ARCH == arm

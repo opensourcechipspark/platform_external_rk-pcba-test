@@ -31,8 +31,8 @@ enum { INSTALL_SUCCESS, INSTALL_ERROR, INSTALL_CORRUPT };
 #define MENU_MAX_COLS 50
 #define MENU_MAX_ROWS 500
 
-#define CHAR_WIDTH 10
-#define CHAR_HEIGHT 18
+#define CHAR_WIDTH 18
+#define CHAR_HEIGHT 32
 
 int ensure_path_mounted(const char* path);
 char** prepend_title(const char** headers);
@@ -42,6 +42,7 @@ static const char *SDCARD_ROOT = "/sdcard";
 void ui_init();
 void ui_print_init(void);
 void ui_print_xy_rgba(int t_col,int t_row,int r,int g,int b,int a,const char * fmt,...);
+void ui_display_sync(int t_col,int t_row,int r,int g,int b,int a,const char* fmt,...);
 void FillColor(int r,int g,int b,int a,int left,int top,int width,int height);
 
 extern int notError;

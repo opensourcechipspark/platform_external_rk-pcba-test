@@ -1,29 +1,40 @@
 #include<stdio.h>
 #include <stdlib.h>
 
+#include"extra-functions.h"
 #include"common.h"
 #include"sdcard_test.h"
+#include "test_case.h"
+#include "language.h"
 
 #define SCAN_RESULT_LENGTH 128
 #define SCAN_RESULT_FILE "/data/sd_capacity"
 
 void * sdcard_test(void * argv)
 {
-	struct sd_msg *sd_msg = (struct sd_msg*)argv;
-	int ret;
+	
+	struct testcase_info *tc_info = (struct testcase_info*)argv;
+	int ret,y;
 	double cap;
 	FILE *fp;
 	char results[SCAN_RESULT_LENGTH];
 	
-	ret =  __system("busybox chmod 777 /sbin/mmctester.sh");
+	/*remind ddr test*/
+	if(tc_info->y <= 0)
+		tc_info->y  = get_cur_print_y();	
+
+	y = tc_info->y;
+	ui_print_xy_rgba(0,y,255,255,0,255,"%s \n",PCBA_SDCARD);
+
+	ret =  __system("busybox chmod 777 /res/mmctester.sh");
 	if(ret)
 		printf("chmod mmctester.sh failed :%d\n",ret);
 		
-	ret = __system("/sbin/mmctester.sh");
+	ret = __system("/res/mmctester.sh");
 	if(ret < 0) {
 		printf("mmc test failed.\n");
-		ui_print_xy_rgba(0,get_cur_print_y(),255,0,0,255,"sdcard test fail\n");
-		sd_msg->result = -1;
+		ui_print_xy_rgba(0,y,255,0,0,255,"%s:[%s]\n",PCBA_SDCARD,PCBA_FAILED);
+		tc_info->result = -1;
 		return argv;
 	}
 	
@@ -31,8 +42,8 @@ void * sdcard_test(void * argv)
 	fp = fopen(SCAN_RESULT_FILE, "r");
 	if(fp == NULL) {
 		printf("can not open %s.\n", SCAN_RESULT_FILE);
-		ui_print_xy_rgba(0,get_cur_print_y(),255,0,0,255,"sdcad test fail\n");
-		sd_msg->result = -1;
+		ui_print_xy_rgba(0,y,255,0,0,255,"%s:[%s]\n",PCBA_SDCARD,PCBA_FAILED);
+		tc_info->result = -1;
 		return argv;
 	}
 
@@ -51,7 +62,8 @@ void * sdcard_test(void * argv)
 	
 	cap = strtod(results,NULL);
 	if(cap)
-		ui_print_xy_rgba(0,get_cur_print_y(),0,0,255,255,"sdcard test success:%2fG\n",cap*1.0/1024/1024);
+		ui_print_xy_rgba(0,y,0,255,0,255,"%s:[%s] { %2fG } \n",PCBA_SDCARD,PCBA_SECCESS,cap*1.0/1024/1024);
+        fclose(fp);
 
 	return argv;
 	

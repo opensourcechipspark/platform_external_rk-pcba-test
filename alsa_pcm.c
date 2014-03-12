@@ -259,7 +259,97 @@ int pcm_write(struct pcm *pcm, void *data, unsigned count)
     }
 }
 
-int pcm_read(struct pcm *pcm, void *data, unsigned count)
+/********************************
+	author:charles chen
+	data:2012.09.27
+	parameter 
+	data: the input data buf point
+	len:   the input data len need consider the pcm_format
+	ret: 0:Left and right channel is valid
+		  1:Left      channel is valid
+		  2:Right    channel is valid
+
+defalt the input signal is like LRLRLR,default pcm_format is 16bit
+*********************************/
+#define SAMPLECOUNT 441*5*2*2
+int channalFlags = -1;//mean the channel is not checked now
+
+int startCheckCount = 0;
+
+int channel_check(void * data,int len )
+{
+	short * pcmLeftChannel = (short *)data;
+	short * pcmRightChannel = pcmLeftChannel+1;
+	unsigned index = 0;
+	int leftValid = 0x0;
+	int rightValid = 0x0;
+	short checkValue = 0;
+	
+	checkValue = *pcmLeftChannel;
+
+	//checkleft first
+	for(index = 0; index < len; index += 2)
+	{
+		
+		if((pcmLeftChannel[index] >= checkValue+50)||(pcmLeftChannel[index] <= checkValue-50))
+		{
+			leftValid++;// = 0x01;
+			ALOGI("-->pcmLeftChannel[%d] = %d checkValue %d leftValid %d",index,pcmLeftChannel[index],checkValue,leftValid);
+			//break;
+		}	
+	}
+
+	if(leftValid >20)
+		leftValid = 0x01;
+	else
+		leftValid = 0;
+	
+	checkValue = *pcmRightChannel;
+
+		//then check right 
+	for(index = 0; index < len; index += 2)
+	{
+		
+		if((pcmRightChannel[index] >= checkValue+50)||(pcmRightChannel[index] <= checkValue-50))
+		{
+			rightValid++;//= 0x02;
+			ALOGI("-->pcmRightChannel[%d] = %d checkValue %d rightValid %d",index,pcmRightChannel[index],checkValue,rightValid);
+			//break;
+		}	
+	}
+
+	if(rightValid >20)
+		rightValid = 0x02;
+	else
+		rightValid = 0;
+	
+	ALOGI("leftValid %d rightValid %d",leftValid,rightValid);
+	return leftValid|rightValid;
+}
+
+void channel_fixed(void * data,int len, int chFlag)
+{
+	//we just fixed when chFlag is 1 or 2.
+	if(chFlag <= 0 || chFlag > 2 )
+		return;
+
+	short * pcmValid = (short *)data;
+	short * pcmInvalid = pcmValid;
+	
+	if(chFlag == 1)
+		pcmInvalid += 1;
+	else if (chFlag == 2)
+		pcmValid += 1;
+	
+	unsigned index ;
+	
+	for(index = 0; index < len; index += 2)
+	{
+		pcmInvalid[index] = pcmValid[index];
+	}
+	return;
+}
+int pcm_read(struct pcm *pcm, void *data, unsigned count, int size)
 {
     struct snd_xferi x;
 
@@ -287,7 +377,29 @@ int pcm_read(struct pcm *pcm, void *data, unsigned count)
             }
             return oops(pcm, errno, "cannot read stream data");
         }
+
+        /*delay for a bug:sometime no sound*/
+        if(size == 0)
+        	usleep(100000);        
+        
 //        LOGV("read() got %d frames", x.frames);
+		if(!(pcm->flags & PCM_MONO))
+		{
+				//LOGI("read() get %d", x.frames);
+			if(channalFlags == -1 )	
+			{
+				if(startCheckCount < SAMPLECOUNT)
+				{
+					startCheckCount += count;
+				}
+				else
+				{
+					channalFlags = channel_check(data,count/2);
+				}
+			}//if(channalFlags == -1)
+
+			channel_fixed(data,count/2, channalFlags);
+		}
         return 0;
     }
 }
@@ -325,10 +437,15 @@ struct pcm *pcm_open(unsigned flags)
     if (!pcm)
         return &bad_pcm;
 
+__open_again:
+
     if (flags & PCM_IN) {
         dname = "/dev/snd/pcmC0D0c";
     } else {
-        dname = "/dev/snd/pcmC0D0p";
+        if (flags & PCM_CARD1)
+            dname = "/dev/snd/pcmC1D0p";
+        else
+            dname = "/dev/snd/pcmC0D0p";
     }
 
     LOGV("pcm_open() period sz multiplier %d",
@@ -339,9 +456,14 @@ struct pcm *pcm_open(unsigned flags)
     period_cnt = 4;//((flags & PCM_PERIOD_CNT_MASK) >> PCM_PERIOD_CNT_SHIFT) + PCM_PERIOD_CNT_MIN;
 
     pcm->flags = flags;
-    pcm->fd = open(dname, O_RDWR);
+    pcm->fd = open(dname, O_RDWR|O_CLOEXEC);
     if (pcm->fd < 0) {
         oops(pcm, errno, "cannot open device '%s'", dname);
+        if (flags & PCM_CARD1) {
+            LOGV("Open sound card1 for HDMI error, open sound card0");
+            flags &= ~PCM_CARD1;
+            goto __open_again;
+        }
         return pcm;
     }
 
@@ -369,8 +491,11 @@ struct pcm *pcm_open(unsigned flags)
     param_set_int(&params, SNDRV_PCM_HW_PARAM_CHANNELS,
                   (flags & PCM_MONO) ? 1 : 2);
     param_set_int(&params, SNDRV_PCM_HW_PARAM_PERIODS, period_cnt);
-    param_set_int(&params, SNDRV_PCM_HW_PARAM_RATE, 44100);
-	
+    if (flags & PCM_8000HZ) {
+        LOGD("set audio capture 8KHz");
+        param_set_int(&params, SNDRV_PCM_HW_PARAM_RATE, 8000);
+    } else
+        param_set_int(&params, SNDRV_PCM_HW_PARAM_RATE, 44100);
 
     if (ioctl(pcm->fd, SNDRV_PCM_IOCTL_HW_PARAMS, &params)) {
         oops(pcm, errno, "cannot set hw params");

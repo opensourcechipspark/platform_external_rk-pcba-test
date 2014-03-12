@@ -30,6 +30,10 @@ struct pcm;
 #define PCM_8000HZ     0x00200000
 #define PCM_RATE_MASK  0x00F00000
 
+#define PCM_CARD0      0x00000000
+#define PCM_CARD1      0x00000001
+#define PCM_CARD_MASK  0x0000000F
+
 #define PCM_PERIOD_CNT_MIN 2
 #define PCM_PERIOD_CNT_SHIFT 16
 #define PCM_PERIOD_CNT_MASK (0xF << PCM_PERIOD_CNT_SHIFT)
@@ -57,7 +61,7 @@ unsigned pcm_buffer_size(struct pcm *pcm);
  * occurs after a fifo underrun.
  */
 int pcm_write(struct pcm *pcm, void *data, unsigned count);
-int pcm_read(struct pcm *pcm, void *data, unsigned count);
+int pcm_read(struct pcm *pcm, void *data, unsigned count, int size);
 
 struct mixer;
 struct mixer_ctl;

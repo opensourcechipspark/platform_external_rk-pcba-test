@@ -30,7 +30,7 @@ mmcp=$mmcblk
             mmcp=$mmcblk"p1"
            busybox mount -t vfat $mmcp /tmp/extsd
             if [ $? -ne 0 ]; then
-                exit -1
+                exit 0
                 busybox sleep 3
                 continue 2
             fi
@@ -39,13 +39,14 @@ mmcp=$mmcblk
         break
     done
     
-    capacity=`busybox df | busybox grep $mmcp | busybox awk '{printf $2}'`
+    capacity=`busybox df | busybox grep "/tmp/extsd" | busybox awk '{printf $2}'`
     echo "$mmcp: $capacity"
     
     busybox umount /tmp/extsd
     
-    echo $3 $capacity > /data/sd_capacity
+    echo $capacity > /data/sd_capacity
 
+	exit 1
 #    while true; do
  #       if [ -b "$mmcblk" ]; then
 #            echo "please remove card$nr"

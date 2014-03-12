@@ -1,4 +1,6 @@
 #include "camera_test.h"
+#include "./minuitwrp/minui.h"
+#include "test_case.h"
 #define VIDEO_DEV_NAME   "/dev/video0"
 #define PMEM_DEV_NAME    "/dev/pmem_cam"
 #define DISP_DEV_NAME    "/dev/graphics/fb1"
@@ -12,8 +14,8 @@
 #define RK29_CAM_VERSION_CODE_2 KERNEL_VERSION(0, 0, 2)
 
 static void *m_v4l2Buffer[4];
-static int v4l2Buffer_phy_addr;
-static int iCamFd, iPmemFd, iDispFd;
+static int v4l2Buffer_phy_addr = 0;
+static int iCamFd, iPmemFd, iDispFd =-1;
 static int preview_w,preview_h;
 
 static char videodevice[20] ={0};
@@ -22,7 +24,7 @@ static unsigned int pix_format;
 
 static void* vaddr = NULL;
 static volatile int isstoped = 0;
-static int hasstoped = 0;
+static int hasstoped = 1;
 enum {
 	FD_INIT = -1,
 };
@@ -35,8 +37,45 @@ struct ion_handle_data handle_data;
 #define RK29_PLAT 0
 static int is_rk30_plat = RK30_PLAT;
 #define  FB_NONSTAND ((is_rk30_plat == RK29_PLAT)?0x2:0x20)
+static int cam_id = 0;
 
+static int camera_x=0,camera_y=0,camera_w=0,camera_h=0,camera_num=0;
+static struct testcase_info *tc_info = NULL;
 
+pthread_t camera_tid;
+ 
+int Camera_Click_Event(int x,int y)
+{	
+	struct list_head *pos;
+	int x_start,x_end;
+	int y_start,y_end;
+	int err;
+
+	if(tc_info == NULL)
+		return -1;		
+
+	if(camera_num < 2)
+		return -1;
+	
+	get_camera_size();
+
+	x_start = camera_x;
+	x_end = x_start + camera_w;
+	y_start = camera_y;
+	y_end = y_start + camera_h;
+
+	if( (x >= x_start) && (x <= x_end) && (y >= y_start) && (y <= y_end))
+	{
+		
+		printf("Camera_Click_Event : change \r\n");	
+		stopCameraTest();
+		usleep(100000);
+		pthread_create(&camera_tid, NULL, startCameraTest, NULL); 
+	}
+		
+	return 0;
+	
+}
 
 
 int CameraCreate(void)
@@ -46,7 +85,7 @@ int CameraCreate(void)
 	struct v4l2_format format;
 
     if (iCamFd == 0) {
-        iCamFd = open(videodevice, O_RDWR);
+        iCamFd = open(videodevice, O_RDWR|O_CLOEXEC);
        
         if (iCamFd < 0) {
             printf(" Could not open the camera  device:%s\n",videodevice);
@@ -89,8 +128,10 @@ int CameraCreate(void)
     }else{
         printf("default as rk30 platform\n");
     }
+    if(v4l2Buffer_phy_addr !=0)
+		goto suc_alloc;
     if(access(PMEM_DEV_NAME, O_RDWR) < 0) {
-            iIonFd = open(ION_DEVICE, O_RDONLY);
+            iIonFd = open(ION_DEVICE, O_RDONLY|O_CLOEXEC);
 
             if(iIonFd < 0 ) {
                 printf("%s: Failed to open ion device - %s",
@@ -146,7 +187,7 @@ int CameraCreate(void)
             	printf("%s: Successfully allocated 0x%x bytes, mIonFd=%d, SharedFd=%d",
             			__FUNCTION__,ionAllocData.len, iIonFd, fd_data.fd);
         }else{
-            iPmemFd = open(PMEM_DEV_NAME, O_RDWR, 0);
+            iPmemFd = open(PMEM_DEV_NAME, O_RDWR|O_CLOEXEC, 0);
             if (iPmemFd < 0) {
             	printf(" Could not open pmem device(%s)\n",PMEM_DEV_NAME);
         		err = -1;
@@ -168,7 +209,7 @@ int CameraCreate(void)
         }
     memset(m_v4l2Buffer[0], 0x00, size);
 	v4l2Buffer_phy_addr = sub.offset;
-   
+suc_alloc:   
           err = ioctl(iCamFd, VIDIOC_QUERYCAP, &mCamDriverCapability);
         if (err < 0) {
         	printf("Error opening device unable to query device.\n");
@@ -200,8 +241,6 @@ int CameraStart(int phy_addr, int buffer_count, int w, int h)
     enum v4l2_buf_type type;
     struct v4l2_requestbuffers creqbuf;
 		
-		isstoped = 0;
-		hasstoped = 0;
 	//buffer_count = 2;
 	if( phy_addr == 0 || buffer_count == 0  ) {
     	printf(" Video Buf is NULL\n");
@@ -249,7 +288,7 @@ int CameraStart(int phy_addr, int buffer_count, int w, int h)
         #endif
 
         m_v4l2Buffer[i] =(void*)((int)m_v4l2Buffer[0] + i*buffer.length);
-	memset(m_v4l2Buffer[i],0x0,buffer.length);
+//	memset(m_v4l2Buffer[i],0x0,buffer.length);
         err = ioctl(iCamFd, VIDIOC_QBUF, &buffer);
         if (err < 0) {
             printf("%s CameraStart VIDIOC_QBUF Failed\n",__FUNCTION__);
@@ -277,31 +316,21 @@ exit:
     return -1;
 }
 
-int CameraStop()
-{
-	struct v4l2_requestbuffers creqbuf;
-
-	creqbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if (ioctl(iCamFd, VIDIOC_STREAMOFF, &creqbuf.type) == -1) {
-        printf("%s VIDIOC_STREAMOFF Failed", __FUNCTION__);
-        return -1;
-    }
-
-	return 0;
-
-}
-
 
 
 int DispCreate(int corx ,int cory,int preview_w,int preview_h )
 {
-	int err;
+	int err = 0;
 	struct fb_var_screeninfo var;
 	unsigned int panelsize[2];
 	int x_phy,y_phy,w_phy,h_phy;
 	int x_visual,y_visual,w_visual,h_visual;
 	struct fb_fix_screeninfo finfo;
+	struct color_key_cfg clr_key_cfg;
+
 	int data[2];
+	if(iDispFd !=-1)
+		goto exit;
 	iDispFd = open(DISP_DEV_NAME,O_RDWR, 0);
 	if (iDispFd < 0) {
 		printf("%s Could not open display device\n",__FUNCTION__);
@@ -319,6 +348,7 @@ int DispCreate(int corx ,int cory,int preview_w,int preview_h )
 		panelsize[0] = preview_w;
 		panelsize[1] = preview_h;
 	}
+	#if 0
 	data[0] = v4l2Buffer_phy_addr;
 	data[1] = (int)(data[0] + preview_w *preview_h);
 	if (ioctl(iDispFd, 0x5002, data) == -1) 
@@ -327,6 +357,7 @@ int DispCreate(int corx ,int cory,int preview_w,int preview_h )
 		err = -1;
 		goto exit;
 	}
+	#endif
 	if (ioctl(iDispFd, FBIOGET_VSCREENINFO, &var) == -1) {
 		printf("%s ioctl fb1 FBIOPUT_VSCREENINFO fail!\n",__FUNCTION__);
 		err = -1;
@@ -348,6 +379,14 @@ int DispCreate(int corx ,int cory,int preview_w,int preview_h )
 		err = -1;
 		goto exit;
 	}
+	
+	clr_key_cfg.win0_color_key_cfg = 0;		//win0 color key disable
+	clr_key_cfg.win1_color_key_cfg = 0x01000000; 	// win1 color key enable
+	clr_key_cfg.win2_color_key_cfg = 0;  
+	if (ioctl(iDispFd,RK_FBIOPUT_COLOR_KEY_CFG, &clr_key_cfg) == -1) {
+                printf("%s set fb color key failed!\n",__FUNCTION__);
+                err = -1;
+        }
 
 	return 0;
 exit1:
@@ -368,37 +407,23 @@ int TaskStop(void)
     	sleep(1);
     	}
     if (ioctl(iCamFd, VIDIOC_STREAMOFF, &creqbuf.type) == -1) {
-        printf("%s VIDIOC_STREAMOFF Failed", __FUNCTION__);
-        return -1;
+        printf("%s VIDIOC_STREAMOFF Failed\n", __FUNCTION__);
+   //     return -1;
     }
-	
-	if (iCamFd > 0) {
-		close(iCamFd);
-		iCamFd = -1;
-	}
-
-	if (iPmemFd > 0) {
-		close(iPmemFd);
-		iPmemFd = -1;
-	}
-
-    if(iIonFd > 0){
-        munmap(m_v4l2Buffer[0], ionAllocData.len);
-
-    	close(iIonFd);
-    	iIonFd = -1;
-        }
-
 	if (iDispFd > 0) {
-        int disable = 0;
+		int disable = 0;
 		printf("Close disp\n");
-        ioctl(iDispFd, FBIOSET_ENABLE,&disable);
+		ioctl(iDispFd, FBIOSET_ENABLE,&disable);
 		close(iDispFd);
 		iDispFd = -1;
 	}
+	if (iCamFd > 0) {
+		close(iCamFd);
+		iCamFd = 0;
+	}
+	printf("\n%s: stop ok!\n",__func__);
 	return 0;
 }
-
 int TaskRuning(int fps_total,int corx,int cory)
 {
 	int err,fps;
@@ -457,6 +482,10 @@ int TaskRuning(int fps_total,int corx,int cory)
 				err = -1;
 				goto exit;
 			}
+			if (ioctl(iDispFd,RK_FBIOSET_CONFIG_DONE, NULL) < 0) {
+        			perror("set config done failed");
+    			}
+
 
 		}
 	if (ioctl(iCamFd, VIDIOC_QBUF, &cfilledbuffer1) < 0) {
@@ -467,17 +496,46 @@ int TaskRuning(int fps_total,int corx,int cory)
 
 	    fps++;
 	}
-	hasstoped = 1;
+//	hasstoped = 1;
 
 exit:
 	return err;
 }
 // the func is a while loop func , MUST  run in a single thread.
-int startCameraTest(int cameraId,int preWidth,int preHeight,int corx ,int cory){
+int startCameraTest(){
 	int ret = 0;
+	int cameraId = 0;
+	int preWidth;
+	int preHeight;
+	int corx ;
+	int cory;
+
+	get_camera_size();
+	
+	if(iCamFd > 0){
+		printf(" %s has been opened! can't switch camera!\n",videodevice);
+		return -1;
+	}
+
+	isstoped = 0;
+	hasstoped = 0;
+	cameraId = cam_id%2;
+	cam_id++;
+	preWidth = camera_w;
+	preHeight = camera_h;
+	corx = camera_x;
+	cory = camera_y;
 	sprintf(videodevice,"/dev/video%d",cameraId);
 	preview_w = preWidth;
 	preview_h = preHeight;
+	printf("start test camera %d ....\n",cameraId);
+	
+    if(access(videodevice, O_RDWR) <0 ){
+	   printf("access %s failed\n",videodevice);
+	   hasstoped = 1;
+	   return -1;
+     }
+	  
 	if (CameraCreate() == 0)
 	{
 		if (CameraStart(v4l2Buffer_phy_addr, 4, preview_w,preview_h) == 0)
@@ -488,41 +546,101 @@ int startCameraTest(int cameraId,int preWidth,int preHeight,int corx ,int cory){
 			}
 			else
 			{
-				ret = -1;
+				tc_info->result = -1;
 				printf("%s display create wrong!\n",__FUNCTION__);
 			}
-		}else
+		}
+		else
 		{
-			ret = -1;
+			tc_info->result = -1;
 			printf("%s camera start erro\n",__FUNCTION__);
 		}
 	}
 	else
 	{
-		ret = -1;
+		tc_info->result = -1;
 		printf("%s camera create erro\n",__FUNCTION__);
 	}
-	isstoped = 1;
+	//isstoped = 1;
 	hasstoped = 1;
-		return ret ;
+	printf("camrea%d test over\n",cameraId);
+	return 0;
 }
+
 int stopCameraTest(){
+	
+	sprintf(videodevice,"/dev/video%d",(cam_id%2));
+	if(access(videodevice, O_RDWR) <0 ){
+	   printf("access %s failed,so dont't switch to camera %d\n",videodevice,(cam_id%2));
+	   //recover videodevice
+	   sprintf(videodevice,"/dev/video%d",(1-(cam_id%2)));
+	   return 0;
+	 }
+	printf("%s enter stop -----\n",__func__);
 	return TaskStop();
 }
+void finishCameraTest(){
+		TaskStop();
+		if (iPmemFd > 0) {
+			close(iPmemFd);
+			iPmemFd = -1;
+		}
+	
+		if(iIonFd > 0){
+			munmap(m_v4l2Buffer[0], ionAllocData.len);
+	
+			close(iIonFd);
+			iIonFd = -1;
+			}
+		if (iDispFd > 0) {
+			int disable = 0;
+			printf("Close disp\n");
+			ioctl(iDispFd, FBIOSET_ENABLE,&disable);
+			close(iDispFd);
+			iDispFd = -1;
+		}
+		
+}
+
+int get_camera_size()
+{
+	if(camera_x>0 && camera_y>0 && camera_w>0 && camera_h >0)
+		return 0;	
+
+	if(gr_fb_width() > gr_fb_height()){
+		camera_w = ((gr_fb_width() >> 1) & ~0x03);//camera_msg->w;
+		camera_h = ((gr_fb_height()*2/3) & ~0x03);// camera_msg->h;
+	}
+	else{
+		camera_h = ((gr_fb_width() >> 1) & ~0x03);//camera_msg->w;
+		camera_w = ((gr_fb_height()*2/3) & ~0x03);// camera_msg->h;
+	}
+
+	if(camera_w > 640)
+		camera_w = 640;
+	if(camera_h > 480)
+		camera_h=480;			
+	
+	camera_x = gr_fb_width() >> 1; 	
+	camera_y = 0;
+
+	return 0;
+}
+
 
 void * camera_test(void *argc)
 {
-	struct camera_msg *camera_msg = (struct camera_msg *)argc;
-	int id = camera_msg->id;
-	int x = camera_msg->x;
-	int y= camera_msg->y;
-	int w = camera_msg->w;
-	int h = camera_msg->h;
-	printf("%s:video%d x:%d y:%d w:%d h:%d\n",__func__,id,x,y,w,h);
-	int result ;
-	result = startCameraTest(id,w,h,x,y);
-	camera_msg->result = result;
+	int ret,num;
 
+	tc_info = (struct testcase_info *)argc; 
+
+	if (script_fetch("camera", "number",&num, 1) == 0) {
+		printf("camera_test num:%d\r\n",num);
+		camera_num = num;	
+	}
+
+	pthread_create(&camera_tid, NULL, startCameraTest, NULL); 
+		
 	return argc;
 }
 

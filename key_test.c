@@ -7,6 +7,8 @@
 #include <dirent.h>
 #include "common.h"
 #include "key_test.h"
+#include "test_case.h"
+#include "language.h"
 #define test_bit(bit, array)    (array[bit/8] & (1<<(bit%8)))
 
 uint8_t keyBitmask[(KEY_MAX + 1) / 8];
@@ -16,21 +18,25 @@ unsigned int gKey = 0;
 static pthread_mutex_t gKeyMutex = PTHREAD_MUTEX_INITIALIZER;
 
 int g_key_test = 0;
-struct key_msg *key_msg = NULL;
+static struct testcase_info  *tc_info = NULL;
+extern int manual_p_y;
 
 int set_gKey(unsigned int code)
 {
 	int i;
+	static n = 0;
 	 for(i=0; i < key_cnt;i++)
 	{
 		if(code == key_code[i].code)
 		{
-			ui_print_xy_rgba(0,key_msg->y + 1,0,255,0,255,"%s\n",key_code[i].name);
+//			ui_print_xy_rgba(tc_info->x,tc_info->y + 1,0,0,255,255,"    [ %s ]\n",key_code[i].name);
+//                        ui_print_xy_rgba(tc_info->x,tc_info->y + 1,0,255,0,255,"%s\n",key_code[i].name);
+                        ui_print_xy_rgba(0,tc_info->y,0,255,0,255,"%s:[%s]\n",PCBA_KEY,key_code[i].name);
 			break;
 		}
 	}
-	 if(code == KEY_POWER)
-	 	 g_key_test = 0;
+//	 if(code == KEY_POWER)
+//	 	 g_key_test = 0;
 	 
 	return 0;
 }
@@ -98,7 +104,7 @@ int scan_key_code()
 								case KEY_HOME:
 									 key_code[key_cnt].name = "home";
 									 break;
-								case KEY_ESC:
+								case KEY_BACK:
 									 key_code[key_cnt].name = "ESC";
 									 break;
 								default:
@@ -106,7 +112,7 @@ int scan_key_code()
 									 break;
 									 
 							}
-							printf("support key code:%d\n",i);
+							//printf("support key code:%d\n",i);
 							key_cnt++;
 						}
 						
@@ -123,15 +129,20 @@ int scan_key_code()
 	 return 0;
  }
 
- int key_test(void *argc)
+void* key_test(void *argc)
 {
-	key_msg = (struct key_msg *)argc;
 	int i = 0;
 	int code;
 	int run = 1;
-	printf("start key test\n");
+	//printf("start key test\n");
+	tc_info  = (struct testcase_info *)argc;
+
+	if(tc_info->y <= 0)
+		tc_info->y  = get_cur_print_y();	
+
+        ui_print_xy_rgba(0,tc_info->y,255,255,0,255,"%s \n",PCBA_KEY);
 	key_code_probe();
 	g_key_test = 1;
-	
-	return 0;
+		
+	return NULL;
 }
