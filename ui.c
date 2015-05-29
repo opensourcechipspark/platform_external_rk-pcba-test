@@ -562,7 +562,7 @@ static void *input_thread(void *cookie)
 				touch_and_hold = 0;
 				touch_repeat = 0;
 				dontwait = 0;
-				if((keyEnd.tv_sec-keyStart.tv_sec) >= 2)
+				if((keyEnd.tv_sec-keyStart.tv_sec) >= 5)
 				{
 					break;
 				}
@@ -805,6 +805,7 @@ void ui_print_xy_rgba(int t_col,int t_row,int r,int g,int b,int a,const char* fm
     // This can get called before ui_init(), so be careful.
     int temp_row = t_row;
     pthread_mutex_lock(&gUpdateMutex);
+    t_col+=2;
     if (text_rows > 0 && text_cols > 0) 
     {
 		char *ptr;

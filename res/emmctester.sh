@@ -2,7 +2,7 @@
 
 #source send_cmd_pipe.sh
 
-nr="0"
+nr="1"
 mmcblk="/dev/block/mmcblk$nr"
 mmcp=$mmcblk
 
@@ -25,6 +25,7 @@ mmcp=$mmcblk
         fi
         
         mmcp=$mmcblk
+		echo $mmcp
         toolbox mount -t vfat $mmcp /tmp/extsd
         if [ $? -ne 0 ]; then
             mmcp=$mmcblk"p1"

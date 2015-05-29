@@ -26,11 +26,20 @@ void * sdcard_test(void * argv)
 	y = tc_info->y;
 	ui_print_xy_rgba(0,y,255,255,0,255,"%s \n",PCBA_SDCARD);
 
+	#ifdef RK3288_PCBA
+	ret =  __system("busybox chmod 777 /res/emmctester.sh");
+	#else
 	ret =  __system("busybox chmod 777 /res/mmctester.sh");
+	#endif
 	if(ret)
 		printf("chmod mmctester.sh failed :%d\n",ret);
+
+    #ifdef RK3288_PCBA      
+    ret = __system("/res/emmctester.sh");
+    #else
+    ret = __system("/res/mmctester.sh");
+    #endif
 		
-	ret = __system("/res/mmctester.sh");
 	if(ret < 0) {
 		printf("mmc test failed.\n");
 		ui_print_xy_rgba(0,y,255,0,0,255,"%s:[%s]\n",PCBA_SDCARD,PCBA_FAILED);
@@ -62,7 +71,7 @@ void * sdcard_test(void * argv)
 	
 	cap = strtod(results,NULL);
 	if(cap)
-		ui_print_xy_rgba(0,y,0,255,0,255,"%s:[%s] { %2fG } \n",PCBA_SDCARD,PCBA_SECCESS,cap*1.0/1024/1024);
+		ui_print_xy_rgba(0,y,0,255,0,255,"%s:[%s] { %2fG } \n",PCBA_SDCARD,PCBA_SECCESS,cap*1.0);///1024/1024);
         fclose(fp);
 
 	return argv;
